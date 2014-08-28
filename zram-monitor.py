@@ -3,8 +3,13 @@
 import os
 import psutil
 import sys
-from gi.repository import Gtk, GLib
-from gi.repository import AppIndicator3 as appindicator
+try:
+   from gi.repository import Gtk, GLib
+   from gi.repository import AppIndicator3 as appindicator
+   gtk = True
+except ImportError:
+   gtk = False
+
 
 
 def sizeof_fmt(num):
@@ -57,34 +62,38 @@ class ZramUsage(object):
 
         return output
 
-png = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'zram.png')
+if gtk:
+	png = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'zram.png')
 
 
-def cb_exit(w, data):
-    Gtk.main_quit()
+	def cb_exit(w, data):
+	    Gtk.main_quit()
 
 
-def cb_readzram(ind_app):
-    stats = ZramUsage().getzramusage()
-    compressed = 100 - float(stats['percent'])
-    output = 'ZRAM: {0:.2f}%, {1}/{2}'.format(
-        compressed, sizeof_fmt(stats['compr_data_size']), sizeof_fmt(stats['orig_data_size']))
-    ind_app.set_label(output, '')
-    return 1
+	def cb_readzram(ind_app):
+	    stats = ZramUsage().getzramusage()
+	    compressed = 100 - float(stats['percent'])
+	    output = 'ZRAM: {0:.2f}%, Total {1}'.format(
+		compressed, sizeof_fmt(stats['orig_data_size']))
+	    ind_app.set_label(output, '')
+	    return 1
 
-ind_app = appindicator.Indicator.new_with_path(
-    "zram-indicator",
-    png,
-    appindicator.IndicatorCategory.APPLICATION_STATUS,
-    os.path.dirname(os.path.realpath(__file__)))
-ind_app.set_status(appindicator.IndicatorStatus.ACTIVE)
+	ind_app = appindicator.Indicator.new_with_path(
+	    "zram-indicator",
+	    png,
+	    appindicator.IndicatorCategory.APPLICATION_STATUS,
+	    os.path.dirname(os.path.realpath(__file__)))
+	ind_app.set_status(appindicator.IndicatorStatus.ACTIVE)
 
-# create a menu
-menu = Gtk.Menu()
-menu_items = Gtk.MenuItem("Exit")
-menu.append(menu_items)
-menu_items.connect("activate", cb_exit, '')
-menu_items.show()
-ind_app.set_menu(menu)
-GLib.timeout_add(1000, cb_readzram, ind_app)
-Gtk.main()
+	# create a menu
+	menu = Gtk.Menu()
+	menu_items = Gtk.MenuItem("Exit")
+	menu.append(menu_items)
+	menu_items.connect("activate", cb_exit, '')
+	menu_items.show()
+	ind_app.set_menu(menu)
+	GLib.timeout_add(1000, cb_readzram, ind_app)
+	Gtk.main()
+else:
+	print str(ZramUsage())
+
