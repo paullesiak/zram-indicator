@@ -1,18 +1,28 @@
 #!/usr/bin/env python
-
+#
+# ZRAM usage appindicator
+#
+# Author: Paul Lesiak
+# Email: paul@paullesiak.com
+# URL: github.com/paullesiak/zram-indicator
+#
+# References:
+#    https://www.kernel.org/doc/Documentation/ABI/testing/sysfs-block-zram
+#
 import os
 import psutil
 import sys
-try:
-   from gi.repository import Gtk, GLib
-   from gi.repository import AppIndicator3 as appindicator
-   gtk = True
-except ImportError:
-   gtk = False
 
+gtk = True
+try:
+    from gi.repository import Gtk, GLib
+    from gi.repository import AppIndicator3 as appindicator
+except ImportError:
+    gtk = False
 
 
 def sizeof_fmt(num):
+    # http://stackoverflow.com/questions/1094841/reusable-library-to-get-human-readable-version-of-file-size
     for x in ['bytes', 'KB', 'MB', 'GB']:
         if num < 1024.0 and num > -1024.0:
             return "%3.1f%s" % (num, x)
@@ -22,78 +32,150 @@ def sizeof_fmt(num):
 
 class ZramUsage(object):
 
-    def getzramusage(self):
-        blockpath = '/sys/block'
-        statfiles = [
-            'compr_data_size', 'orig_data_size', 'mem_used_total',
-            'disksize', 'notify_free', 'size', 'zero_pages']
+    blockpath = '/sys/block'
 
-        zramblocks = [z for z in os.listdir(blockpath) if z.startswith('zram')]
-        stats = dict((k, 0) for k in statfiles)
-        for block in zramblocks:
-            for statfile in statfiles:
-                f = os.path.join(blockpath, block, statfile)
-                if os.path.exists(f):
-                    data = 0
-                    sumdata = stats.get(statfile, 0)
-                    with open(f, 'r') as handle:
-                        data = handle.read()
-                    # print '{0} = {1}'.format(f, sizeof_fmt(int(data)))
-                    stats[statfile] = sumdata + int(data)
-        percentage = 100 * \
-            float(stats[statfiles[0]]) / float(stats[statfiles[1]])
-        stats['percent'] = percentage
-        stats['blocks'] = zramblocks
-        return stats
+    def blocks(self):
+        return [z for z in os.listdir(self.blockpath) if z.startswith('zram')]
+
+    def readzramstats(self, statfile):
+        data = 0
+        for block in self.blocks():
+            f = os.path.join(self.blockpath, block, statfile)
+            if os.path.exists(f):
+                with open(f, 'r') as handle:
+                    data += int(handle.read())
+
+        return data
+
+    def numberofblocks(self, pretty=False):
+        stat = len(self.blocks())
+        if pretty:
+            return 'Number of zRam devices: {0}'.format(stat)
+        return stat
+
+    def compresseddatasize(self, pretty=False):
+        stat = self.readzramstats('compr_data_size')
+        if pretty:
+            return 'Compressed Data Size: {0}'.format(sizeof_fmt(stat))
+        return stat
+
+    def originaldatasize(self, pretty=False):
+        stat = self.readzramstats('orig_data_size')
+        if pretty:
+            return 'Uncompressed Data Size: {0}'.format(sizeof_fmt(stat))
+        return stat
+
+    def memusedtotal(self, pretty=False):
+        stat = self.readzramstats('mem_used_total')
+        if pretty:
+            return 'Total zRam Memory Usage: {0}'.format(sizeof_fmt(stat))
+        return stat
+
+    def disksize(self, pretty=False):
+        stat = self.readzramstats('disksize')
+        if pretty:
+            return 'Total uncompressed capacity: {0}'.format(sizeof_fmt(stat))
+        return stat
+
+    def notifyfree(self, pretty=False):
+        stat = self.readzramstats('disksize')
+        if pretty:
+            return 'Swap slot free notifies: {0}'.format(stat)
+        return stat
+
+    def size(self, pretty=False):
+        stat = self.readzramstats('size')
+        if pretty:
+            return 'Size?: {0}'.format(sizeof_fmt(stat))
+        return stat
+
+    def compressionratio(self, pretty=False):
+        stat = 1.0 - \
+            (float(self.compresseddatasize()) / float(self.originaldatasize()))
+        if pretty:
+            return 'Compression Ratio: {0:.2f}%'.format(stat * 100.0)
+        return stat
+
+    def zramutilization(self, pretty=False):
+        stat = 1.0 - (float(self.originaldatasize()) / float(self.swapusage()))
+        if pretty:
+            return 'zRam Utilization Ratio: {0:.2f}%'.format(stat * 100.0)
+        return stat
+
+    def swapusage(self, pretty=False):
+        swap = psutil.swap_memory()
+        stat = swap.used
+        if pretty:
+            return 'Swap Usage: {0}'.format(sizeof_fmt(stat))
+        return stat
 
     def __repr__(self):
 
         output = ''
-        stats = self.getzramusage()
 
-        swap = psutil.swap_memory()
-
-        output += 'swap in use: {0}\n'.format(sizeof_fmt(swap.used))
-        output += 'number of zram devices: {0}\n'.format(len(stats['blocks']))
-        for k in ['compr_data_size', 'orig_data_size',
-                  'mem_used_total', 'disksize']:
-            output += '{0}: {1}\n'.format(k, sizeof_fmt(stats.get(k)))
-        output += 'zram compressed size: {0:.2f}%\n'.format(stats['percent'])
+        for s in [self.numberofblocks, self.compresseddatasize,
+                  self.originaldatasize, self.memusedtotal, self.disksize,
+                  self.notifyfree, self.size, self.compressionratio, self.swapusage, self.zramutilization]:
+            output += '{0}\n'.format(s(True))
 
         return output
 
 if gtk:
-	png = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'zram.png')
+    png = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'zram.png')
+    zram = ZramUsage()
+
+    cmdList = [zram.numberofblocks, zram.compresseddatasize,
+                               zram.originaldatasize, zram.memusedtotal, 
+                               zram.disksize, zram.notifyfree, zram.size, 
+                               zram.compressionratio, zram.swapusage, 
+                               zram.zramutilization]
+    menuItems = []
+
+    def appindicator_exit(w, data):
+        Gtk.main_quit()
+
+    def appindicator_readzram(ind_app, menu, firstRun=False):
+
+        stat = 1.0 - (float(zram.originaldatasize()) / float(zram.swapusage()))
+
+        ind_app.set_label('{0:.2f}%'.format(stat * 100.0), '')
+
+        # if not firstRun:
+        #     menu = ind_app.get_menu()
+
+        for i, s in enumerate(cmdList):
+            if firstRun:
+                menu_item = Gtk.MenuItem(s(True))
+                menu.append(menu_item)
+                menu_item.show()
+                menuItems.append(menu_item)
+            else:
+                menu_item = menuItems[i]
+                menu_item.set_label(s(True))
+
+        return 1
+
+    ind_app = appindicator.Indicator.new_with_path(
+        "zram-indicator",
+        png,
+        appindicator.IndicatorCategory.APPLICATION_STATUS,
+        os.path.dirname(os.path.realpath(__file__)))
+
+    ind_app.set_status(appindicator.IndicatorStatus.ACTIVE)
+
+    # create a menu
+    menu = Gtk.Menu()
+    appindicator_readzram(ind_app, menu, firstRun=True)
+
+    menu_items = Gtk.MenuItem("Exit")
+    menu.append(menu_items)
+    menu_items.connect("activate", appindicator_exit, '')
+    menu_items.show()
+    
+    ind_app.set_menu(menu)
 
 
-	def cb_exit(w, data):
-	    Gtk.main_quit()
-
-
-	def cb_readzram(ind_app):
-	    stats = ZramUsage().getzramusage()
-	    compressed = 100 - float(stats['percent'])
-	    output = 'ZRAM: {0:.2f}%, Total {1}'.format(
-		compressed, sizeof_fmt(stats['orig_data_size']))
-	    ind_app.set_label(output, '')
-	    return 1
-
-	ind_app = appindicator.Indicator.new_with_path(
-	    "zram-indicator",
-	    png,
-	    appindicator.IndicatorCategory.APPLICATION_STATUS,
-	    os.path.dirname(os.path.realpath(__file__)))
-	ind_app.set_status(appindicator.IndicatorStatus.ACTIVE)
-
-	# create a menu
-	menu = Gtk.Menu()
-	menu_items = Gtk.MenuItem("Exit")
-	menu.append(menu_items)
-	menu_items.connect("activate", cb_exit, '')
-	menu_items.show()
-	ind_app.set_menu(menu)
-	GLib.timeout_add(1000, cb_readzram, ind_app)
-	Gtk.main()
+    GLib.timeout_add(1000, appindicator_readzram, ind_app, False)
+    Gtk.main()
 else:
-	print str(ZramUsage())
-
+    print str(ZramUsage())
