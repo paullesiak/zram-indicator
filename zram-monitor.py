@@ -12,6 +12,7 @@
 import os
 import psutil
 import sys
+import locale
 
 gtk = True
 try:
@@ -20,6 +21,7 @@ try:
 except ImportError:
     gtk = False
 
+locale.setlocale(locale.LC_ALL, 'en_US.UTF8')
 
 def sizeof_fmt(num):
     # http://stackoverflow.com/questions/1094841/reusable-library-to-get-human-readable-version-of-file-size
@@ -80,7 +82,25 @@ class ZramUsage(object):
     def notifyfree(self, pretty=False):
         stat = self.readzramstats('disksize')
         if pretty:
-            return 'Swap slot free notifies: {0}'.format(stat)
+            return 'Swap slot free notifies: {0}'.format(locale.format('%d', stat, grouping=True))
+        return stat
+
+    def readcount(self, pretty=False):
+        stat = self.readzramstats('num_reads')
+        if pretty:
+            return 'Number of reads: {0}'.format(locale.format('%d', stat, grouping=True))
+        return stat
+
+    def writecount(self, pretty=False):
+        stat = self.readzramstats('num_reads')
+        if pretty:
+            return 'Number of writes: {0}'.format(locale.format('%d', stat, grouping=True))
+        return stat
+
+    def zeropages(self, pretty=False):
+        stat = self.readzramstats('zero_pages')
+        if pretty:
+            return 'Unallocated pages: {0}'.format(locale.format('%d', stat, grouping=True))
         return stat
 
     def size(self, pretty=False):
@@ -112,10 +132,22 @@ class ZramUsage(object):
     def __repr__(self):
 
         output = ''
+        cmdList = [
+            zram.compressionratio, 
+            zram.zramutilization,
+            zram.numberofblocks, 
+            zram.compresseddatasize, 
+            zram.originaldatasize, 
+            zram.memusedtotal, 
+            zram.swapusage, 
+            zram.disksize, 
+            zram.readcount,
+            zram.writecount,
+            zram.zeropages,
+            zram.notifyfree, 
+        ]
 
-        for s in [self.numberofblocks, self.compresseddatasize,
-                  self.originaldatasize, self.memusedtotal, self.disksize,
-                  self.notifyfree, self.size, self.compressionratio, self.swapusage, self.zramutilization]:
+        for s in cmdList:
             output += '{0}\n'.format(s(True))
 
         return output
@@ -124,11 +156,20 @@ if gtk:
     png = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'zram.png')
     zram = ZramUsage()
 
-    cmdList = [zram.numberofblocks, zram.compresseddatasize,
-                               zram.originaldatasize, zram.memusedtotal, 
-                               zram.disksize, zram.notifyfree, zram.size, 
-                               zram.compressionratio, zram.swapusage, 
-                               zram.zramutilization]
+    cmdList = [
+        zram.compressionratio, 
+        zram.zramutilization,
+        zram.numberofblocks, 
+        zram.compresseddatasize, 
+        zram.originaldatasize, 
+        zram.memusedtotal, 
+        zram.swapusage, 
+        zram.disksize, 
+        zram.readcount,
+        zram.writecount,
+        zram.zeropages,
+        zram.notifyfree, 
+    ]
     menuItems = []
 
     def appindicator_exit(w, data):
@@ -136,7 +177,7 @@ if gtk:
 
     def appindicator_readzram(ind_app, menu, firstRun=False):
 
-        stat = 1.0 - (float(zram.originaldatasize()) / float(zram.swapusage()))
+        stat = zram.compressionratio(pretty=False)
 
         ind_app.set_label('{0:.2f}%'.format(stat * 100.0), '')
 
@@ -171,9 +212,8 @@ if gtk:
     menu.append(menu_items)
     menu_items.connect("activate", appindicator_exit, '')
     menu_items.show()
-    
-    ind_app.set_menu(menu)
 
+    ind_app.set_menu(menu)
 
     GLib.timeout_add(1000, appindicator_readzram, ind_app, False)
     Gtk.main()
