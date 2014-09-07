@@ -110,14 +110,20 @@ class ZramUsage(object):
         return stat
 
     def compressionratio(self, pretty=False):
-        stat = 1.0 - \
-            (float(self.compresseddatasize()) / float(self.originaldatasize()))
+	try:
+            stat = 1.0 - \
+              (float(self.compresseddatasize()) / float(self.originaldatasize()))
+	except ZeroDivisionError:
+		stat = 0.0
         if pretty:
             return 'Compression Ratio: {0:.2f}%'.format(stat * 100.0)
         return stat
 
     def zramutilization(self, pretty=False):
-        stat = 1.0 - (float(self.originaldatasize()) / float(self.swapusage()))
+	try:
+            stat = 1.0 - (float(self.originaldatasize()) / float(self.swapusage()))
+	except ZeroDivisionError:
+            stat = 0.0
         if pretty:
             return 'zRam Utilization Ratio: {0:.2f}%'.format(stat * 100.0)
         return stat
@@ -132,6 +138,7 @@ class ZramUsage(object):
     def __repr__(self):
 
         output = ''
+	zram = self
         cmdList = [
             zram.compressionratio, 
             zram.zramutilization,
@@ -215,7 +222,7 @@ if gtk:
 
     ind_app.set_menu(menu)
 
-    GLib.timeout_add(1000, appindicator_readzram, ind_app, False)
+    GLib.timeout_add(5000, appindicator_readzram, ind_app, False)
     Gtk.main()
 else:
     print str(ZramUsage())
